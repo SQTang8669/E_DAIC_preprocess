@@ -2,21 +2,27 @@ import os
 import shutil
 
 import whisper
-import subprocess
 from utils import *
+from rich.progress import Progress
+
+from df.enhance import enhance, init_df, load_audio, save_audio
 
 path = 'data/original'
 new_path = 'data/new_data'
 audio_filter_path = 'data/audio/audio_filter'
 audio_seg_path = 'data/audio/audio_seg'
 
-class Steps():
+padding = 0.1
+# lower thres leads to more intense filtering
+thres = 0.3
 
+class Steps():
+    @staticmethod
     def step_1():
         check_path(path)
         makedir([f'{new_path}/trans', f'{new_path}/audio', audio_filter_path, audio_seg_path])
 
-        for item in os.listdir(f'{path}/trans'):
+        for item in os.listdir(path):
             sample_id = item[:3]
             # get old and new path for audio and transcript
             files = get_files(path, new_path, sample_id)
@@ -27,49 +33,86 @@ class Steps():
             # delete empty original data dir
             cleanup_empty_folders(path)
 
-        print('Step 1 finished.')
+        print('#############  Step 1 finished  #############')
 
+    @staticmethod
     def step_2():
-        subprocess.run(['bash', 'scripts/deepFilter.sh', f'{new_path}/audio', audio_filter_path])
+        deepfilter_model, df_state, _ = init_df()  # Load default model
+
+        for audio_name in os.listdir(f'{new_path}/audio'):
+            audio, _ = load_audio(os.path.join(f'{new_path}/audio', audio_name), sr=df_state.sr())
+            enhanced_audio = enhance(deepfilter_model, df_state, audio)
+            save_audio(os.path.join(audio_filter_path, audio_name), enhanced_audio, df_state.sr())
+
         # if a audio file is filtered, then delete the original audio file
         clean_after_filter(new_path, audio_filter_path)
-        # if audio files are all deleted, then delete the audio dir
-        cleanup_empty_folders(f'{new_path}/audio')
+        print('#############  Step 2 finished  #############')
 
+    @staticmethod
     def step_3():
+        print('Loading whisper model...')
         model = whisper.load_model("medium")
+        print('Loaded whisper model.')
 
-        # pth_ = '/Users/zhuo/main/liao_related/e_daic_preprocess/data/audio/audio_no/300_14.wav'
+        with Progress() as progress:
+            audio_files = os.listdir(audio_filter_path)
+            task1 = progress.add_task("[red]Processing audio files...", total=len(audio_files))
 
-        # result = model.transcribe(pth_)
+            for item in audio_files:
+                sample_id = item[:3]
 
-        for item in os.listdir(audio_filter_path):
-            sample_id = item[:3]
+                audio_file, audio_len = process_audio(audio_filter_path, item)
+                json_path = f'{new_path}/trans/{sample_id}.json'
 
-            audio_file, audio_len = process_audio(audio_filter_path, item)
-            json_path = f'{new_path}/trans/{sample_id}.json'
+                with open(json_path, 'rb') as f:
+                    trans = json.load(f)
 
-            with open(json_path, 'rb') as f:
-                trans = json.load(f)
+                filters = []
+                et_last = 0
 
-            filters = []
-            et_last = 0
-            for idx, seg in enumerate(trans):
-                st, et = float(seg['st']), float(seg['et']) + 0.4
+                task2 = progress.add_task(f"[blue]Processing segments for {sample_id}...", total=len(trans))
 
-                et = process_et(st, et, trans, idx, audio_len)
+                for idx, seg in enumerate(trans):
+                    st, et = round(float(seg['st']), 2), round(float(seg['et']+padding), 2)
 
-                process_clips(st, et, model, audio_file, audio_seg_path, filters, sample_id, idx)
+                    et = process_et(st, et, trans, idx, audio_len)
+                    st = process_st(st, et, trans, idx)
 
-                if st - et_last > 10:
-                    last_possible_seg = {'st': et_last, 'et': st+0.4}
+                    process_clips(
+                        st, 
+                        et, 
+                        thres, 
+                        model, 
+                        audio_file, 
+                        audio_seg_path, 
+                        filters, 
+                        sample_id, 
+                        idx)
 
-                    process_clips(last_possible_seg['st'], last_possible_seg['et'], model, audio_file, audio_seg_path, filters,  sample_id, f'{idx}_0')
+                    if st - et_last > 10:
+                        last_possible_seg = {'st': et_last, 'et': st + padding}
 
-                et_last = et
+                        process_clips(
+                            last_possible_seg['st'], 
+                            last_possible_seg['et'], 
+                            thres,
+                            model, 
+                            audio_file, 
+                            audio_seg_path, 
+                            filters,  
+                            sample_id, 
+                            f'{idx}_0')
 
-            with open(json_path, 'w') as f:
-                json.dump(filters, f, indent=4)
+                    et_last = et
+
+                    progress.update(task2, advance=1)
+                progress.remove_task(task2)
+                progress.update(task1, advance=1)
+
+                with open(json_path, 'w') as f:
+                    json.dump(filters, f, indent=4)
+                
+        print('#############  Step 3 finished  #############')
 
 
 if __name__ == '__main__':

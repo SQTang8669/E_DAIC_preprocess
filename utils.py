@@ -25,8 +25,8 @@ def makedir(path):
 
 
 def get_files(path, new_path, sample_id):
-    audio_o = os.path.join(path, 'audio', f'{sample_id}_AUDIO.wav')
-    trans_o = os.path.join(path, 'trans', f'{sample_id}_Transcript.csv')
+    audio_o = os.path.join(path, f'{sample_id}_P', f'{sample_id}_AUDIO.wav')
+    trans_o = os.path.join(path, f'{sample_id}_P', f'{sample_id}_Transcript.csv')
 
     check_path(audio_o, sample_id)
     check_path(trans_o, sample_id)
@@ -84,9 +84,10 @@ def cleanup_empty_folders(main_folder):
 
 def clean_after_filter(new_path, audio_filter_path):
     for item in os.listdir(f'{new_path}/audio'):
-        if os.path.exists(f'{new_path}/audio/{item}') and os.path.exists(f'{audio_filter_path}/{item[:3]}_DeepFilterNet3.wav'):
+        if os.path.exists(f'{new_path}/audio/{item}') and os.path.exists(f'{audio_filter_path}/{item[:3]}.wav'):
             os.remove(f'{new_path}/audio/{item}')
-
+            
+    cleanup_empty_folders(f'{new_path}/audio')
 
 def process_et(st, et, trans, idx, audio_len):
     # if end time smaller than start time, then change the end time to the start time of last segment
@@ -101,6 +102,14 @@ def process_et(st, et, trans, idx, audio_len):
     return et
 
 
+def process_st(st, et, trans, idx):
+    # if end time smaller than start time, then change the end time to the start time of last segment
+    if et - st > 30:
+        return trans[idx-1]['et']
+    else:
+        return st
+
+
 def process_audio(audio_filter_path, item):
     audio_path = os.path.join(audio_filter_path, item)
     audio_file = AudioFileClip(audio_path)
@@ -109,7 +118,7 @@ def process_audio(audio_filter_path, item):
     return audio_file, audio_len
 
 
-def process_whisper_result(result, st_last):
+def process_whisper_result(result, st_last, thres):
     # if it's not English, then drop it
     if result['language'] != 'en':
         return None
@@ -120,7 +129,7 @@ def process_whisper_result(result, st_last):
         text, st, et = [], [], []
         for segment in result['segments']:
             # if it's not likely to be a speech, then drop it
-            if segment['no_speech_prob'] > 0.3:
+            if segment['no_speech_prob'] > thres:
                 continue
             else:
                 text.append(segment['text'])
@@ -139,14 +148,14 @@ def process_whisper_result(result, st_last):
             return None
 
 
-def process_clips(st, et, model, audio_file, audio_seg_path, filters, sample_id, idx):
+def process_clips(st, et, thres, model, audio_file, audio_seg_path, filters, sample_id, idx):
     clip_path = os.path.join(audio_seg_path, f'{sample_id}_{idx}.wav')
     clip = audio_file.subclip(st, et)
     clip.write_audiofile(clip_path, logger=None)
 
     result = model.transcribe(clip_path)
 
-    result_filter = process_whisper_result(result, st)
+    result_filter = process_whisper_result(result, st, thres)
 
     if result_filter:
         filters.append(result_filter)
