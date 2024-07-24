@@ -110,14 +110,6 @@ def process_st(st, et, trans, idx):
         return st
 
 
-def process_audio(audio_filter_path, item):
-    audio_path = os.path.join(audio_filter_path, item)
-    audio_file = AudioFileClip(audio_path)
-    audio_len = audio_file.duration
-
-    return audio_file, audio_len
-
-
 def process_whisper_result(result, st_last, thres):
     # if it's not English, then drop it
     if result['language'] != 'en':
@@ -161,3 +153,31 @@ def process_clips(st, et, thres, model, audio_file, audio_seg_path, filters, sam
         filters.append(result_filter)
     else:
         shutil.move(clip_path, os.path.join('data/audio/audio_no', f'{sample_id}_{idx}.wav'))
+
+
+def merge_overlapping_segments(trans):
+    """Merge overlapping segments."""
+    if not trans:
+        return []
+
+    # Sort segments based on the start time
+    sorted_trans = sorted(trans, key=lambda x: float(x['st']))
+    merged_trans = [sorted_trans[0]]
+
+    for current in sorted_trans[1:]:
+        last = merged_trans[-1]
+        # If current segment starts before last segment ends, they overlap
+        if float(current['st']) < float(last['et']):
+            # Merge the segments by extending the end time of the last segment
+            last['et'] = max(float(last['et']), float(current['et']))
+        else:
+            # No overlap, add the current segment to the list
+            merged_trans.append(current)
+
+    return merged_trans
+
+def process_audio(audio_filter_path, item):
+    audio_path = os.path.join(audio_filter_path, item)
+    audio_file = AudioFileClip(audio_path)
+    audio_len = audio_file.duration
+    return audio_file, audio_len

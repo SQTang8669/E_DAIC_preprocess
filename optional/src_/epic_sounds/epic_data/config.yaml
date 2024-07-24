@@ -1,0 +1,42 @@
+AUDIO_DATA:
+  CLIP_SECS: 1.999
+  HOP_LENGTH: 5
+  INPUT_CHANNEL_NUM:
+  - 1
+  NUM_FRAMES: 1024
+  NUM_FREQUENCIES: 128
+  SAMPLING_RATE: 24000
+  WINDOW_LENGTH: 10
+DATA_LOADER:
+  NUM_WORKERS: 16
+  PIN_MEMORY: true
+EPICSOUNDS:
+  ANNOTATIONS_DIR: /mnt/lynx1/datasets/Epic-hdf5/annotations
+  AUDIO_DATA_FILE: /mnt/lynx1/datasets/Epic-hdf5/EPIC-KITCHENS-100_audio.hdf5
+  TEST_LIST: EPIC_Sounds_validation.pkl
+  TRAIN_LIST: EPIC_Sounds_train.pkl
+  VAL_LIST: EPIC_Sounds_validation.pkl
+MIXUP:
+  ALPHA: 0.2
+  ENABLE: false
+MODEL:
+  ARCH: aum
+  MULTI_PATHWAY_ARCH:
+  - slowfast
+  SINGLE_PATHWAY_ARCH:
+  - ast
+  - aum
+NUM_GPUS: 1
+SHARD_ID: 0
+SLOWFAST:
+  ALPHA: 8
+  BETA_INV: 8
+  FUSION_CONV_CHANNEL_RATIO: 2
+  FUSION_KERNEL_SZ: 5
+TEST:
+  BATCH_SIZE: 12
+  DATASET: EpicSounds
+  NUM_ENSEMBLE_VIEWS: 5
+TRAIN:
+  BATCH_SIZE: 24
+  DATASET: EpicSounds
