@@ -673,7 +673,8 @@ class AudioMamba(nn.Module):
                 prenorm=False,
                 residual_in_fp32=self.residual_in_fp32,
             )
-        return hidden_states[:, -1, :]
+            max_, _ = torch.max(hidden_states, dim=1)
+        return hidden_states[:, -1, :], hidden_states.mean(dim=1), max_
         # # return only cls token if it exists
         # if self.if_cls_token:
         #     if self.use_double_cls_token:
