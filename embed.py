@@ -2,9 +2,12 @@ import os
 import json
 import pickle
 
+import torch
 from text2vec import SentenceModel
 from moviepy.editor import AudioFileClip
 from optional.audio_mamba import get_model, get_audio_feats
+
+from rich.progress import Progress
 
 from utils import *
 
@@ -28,37 +31,45 @@ class Embed():
             config_path='optional/configs/base_scratch-voxceleb-33.12.json')
         print('Loaded audio embedded model.')
 
-        for item in os.listdir(f'{new_path}/trans'):
-            audio_id = item[:3]
+        with Progress() as progress:
+            items = os.listdir(f'{new_path}/trans')
+            task1 = progress.add_task("[red]Processing audio files...", total=len(items))
 
-            matching_files = find_audio_files(audio_path, audio_id)
+            for item in items:
+                audio_id = item[:3]
 
-            audio_file = AudioFileClip(matching_files[0])
-            json_path = os.path.join(new_path, 'trans', item)
+                audio_file = AudioFileClip(find_audio_files(audio_path, audio_id)[0])
+                json_path = os.path.join(new_path, 'trans', item)
 
-            with open(json_path, 'rb') as f:
-                trans = json.load(f)
+                with open(json_path, 'rb') as f:
+                    trans = json.load(f)
 
-            embeds = []
-            for seg in trans:
-                st, et, text = seg['st'], seg['et'], seg['text']
-                text_embed = text_embed_model.encode(text)
+                embeds = []
+                task2 = progress.add_task(f"[blue]Processing segments for {audio_id}...", total=len(trans))
+                for seg in trans:
+                    st, et, text = seg['st'], seg['et'], seg['text']
+                    text_embed = text_embed_model.encode(text)
 
-                audio_seg = audio_file.subclip(st, et)
-                audio_seg.write_audiofile('tmp.wav', logger=None)
-                audio_input = get_audio_feats('tmp.wav', 'optional/configs/base_scratch-voxceleb-33.12.json')
+                    audio_seg = audio_file.subclip(st, et)
+                    audio_seg.write_audiofile('tmp.wav', logger=None)
+                    audio_input = get_audio_feats('tmp.wav', 'optional/configs/base_scratch-voxceleb-33.12.json')
 
-                audio_embed = AuM.forward(audio_input.cuda(), return_features=True)
+                    with torch.no_grad():
+                        audio_embed = AuM.forward(audio_input.cuda(), return_features=True)
 
-                embed = {
-                    'txt': text_embed,
-                    'ado': audio_embed
-                }
-                embeds.append(embed)
-            
-            with open(os.path.join(embed_path, f'{audio_id}.pkl'), 'wb') as f:
-                pickle.dump(embeds, f)
+                    embed = {
+                        'txt': text_embed,
+                        'ado': audio_embed
+                    }
+                    embeds.append(embed)
+
+                    progress.update(task2, advance=1)
+                
+                with open(os.path.join(embed_path, f'{audio_id}.pkl'), 'wb') as f:
+                    pickle.dump(embeds, f)
+
+                progress.remove_task(task2)
+                progress.update(task1, advance=1)
 
 if __name__ == '__main__':
     Embed.embedding()
-    # Embed.sort_audio_segs('/root/tang/E_DAIC_preprocess/data/audio/audio_seg')

@@ -490,6 +490,7 @@ class AudioMamba(nn.Module):
         weights = weights.permute(0, 2, 3, 1).view(target_grid_size[0] * target_grid_size[1], -1)
         return weights
 
+
     def init_rope(self):
         half_head_dim = self.embed_dim // 2
             
@@ -672,7 +673,7 @@ class AudioMamba(nn.Module):
                 prenorm=False,
                 residual_in_fp32=self.residual_in_fp32,
             )
-        return hidden_states
+        return hidden_states[:, -1, :]
         # # return only cls token if it exists
         # if self.if_cls_token:
         #     if self.use_double_cls_token:
@@ -693,6 +694,7 @@ class AudioMamba(nn.Module):
 
     # @autocast()
     def forward(self, x, return_features=False, inference_params=None, if_random_cls_token_position=False, if_random_token_rank=False, patch_size=None, strides=None): # NOTE: For now, these are all being used as default. Later, these could be set through the args param
+        torch.cuda.empty_cache()
         x = self.forward_features(x, inference_params, if_random_cls_token_position=if_random_cls_token_position, if_random_token_rank=if_random_token_rank, patch_size=patch_size, strides=strides)
         if return_features:
             return x
