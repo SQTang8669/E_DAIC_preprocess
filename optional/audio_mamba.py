@@ -1,17 +1,58 @@
-from src_ import  models
+from .src_ import  models
 import json
-import re
+
+import torch
+import torchaudio
 
 
 class Namespace:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
+def get_audio_feats(audio_path, config_path):
+
+    with open(config_path, 'r') as f:
+        config = json.load(f) 
+    data_args = Namespace(**config)
+
+    waveform, sr = torchaudio.load(audio_path)
+    waveform = waveform - waveform.mean()
+
+    # Extract the features
+    fbank = torchaudio.compliance.kaldi.fbank(
+        waveform, 
+        htk_compat=True, 
+        sample_frequency=sr, 
+        use_energy=False,
+        window_type='hanning', 
+        num_mel_bins=data_args.num_mel_bins,
+        dither=0.0, 
+        frame_shift=10
+    )
+
+    # Compute the padding length
+    n_frames = fbank.shape[0]
+    p = data_args.target_length - n_frames
+
+    # cut or pad
+    if p > 0:
+        m = torch.nn.ZeroPad2d((0, 0, 0, p))
+        fbank = m(fbank)
+    elif p < 0:
+        fbank = fbank[0:data_args.target_length, :]
+
+    fbank = (fbank - data_args.mean) / (data_args.std * 2)
+
+    fbank = fbank.unsqueeze(0)
+
+    return fbank
+
 def get_model(model_path, config_path):
+
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    model_args = Namespace(**config)
+    args = Namespace(**config)
 
     # AuM block type
     bimamba_type = {
@@ -19,24 +60,24 @@ def get_model(model_path, config_path):
         'Fo-Bi': 'v1', 
         'Bi-Bi': 'v2'
     }.get(
-        model_args.aum_variant, 
+        args.aum_variant, 
         None
     )
 
     AuM = models.AudioMamba(
-        spectrogram_size=(data_args.num_mel_bins, data_args.target_length),
+        spectrogram_size=(args.num_mel_bins, args.target_length),
         patch_size=(16, 16),
         strides=(16, 16),
         embed_dim=768,
-        num_classes=model_args.n_classes,
-        imagenet_pretrain=model_args.imagenet_pretrain,
-        imagenet_pretrain_path=model_args.imagenet_pretrain_path,
-        aum_pretrain=model_args.aum_pretrain,
-        aum_pretrain_path=model_args.aum_pretrain_path,
+        num_classes=args.n_classes,
+        imagenet_pretrain=args.imagenet_pretrain,
+        imagenet_pretrain_path=args.imagenet_pretrain_path,
+        aum_pretrain=args.aum_pretrain,
+        aum_pretrain_path=model_path,
         bimamba_type=bimamba_type,
     )
 
-    AuM.to(model_args.device)
+    AuM.to(args.device)
     AuM.eval()
 
     return AuM

@@ -48,7 +48,7 @@ def preemphasis(signal,coeff=0.97):
     return np.append(signal[0],signal[1:]-coeff*signal[:-1])
 
 class AudiosetDataset(Dataset):
-    def __init__(self, dataset_json_file, audio_conf, label_csv=None, rev_audio=False):
+    def __init__(self, dataset_json_file=None, audio_conf=None, label_csv=None, rev_audio=False):
         """
         Dataset that manages audio recordings
         :param audio_conf: Dictionary containing the audio loading and preprocessing settings
@@ -148,10 +148,22 @@ class AudiosetDataset(Dataset):
         elif p < 0:
             fbank = fbank[0:target_length, :]
 
-        if filename2 == None:
-            return fbank, 0
-        else:
-            return fbank, mix_lambda
+        freqm = torchaudio.transforms.FrequencyMasking(self.freqm)
+        timem = torchaudio.transforms.TimeMasking(self.timem)
+
+        fbank = torch.transpose(fbank, 0, 1)
+        # this is just to satisfy new torchaudio version, which only accept [1, freq, time]
+        fbank = fbank.unsqueeze(0)
+        if self.freqm != 0:
+            fbank = freqm(fbank)
+        if self.timem != 0:
+            fbank = timem(fbank)
+        # squeeze it back, it is just a trick to satisfy new torchaudio version
+        fbank = fbank.squeeze(0)
+        fbank = torch.transpose(fbank, 0, 1)
+        fbank = (fbank - self.norm_mean) / (self.norm_std * 2)
+
+        return fbank
 
     def __getitem__(self, index):
         """

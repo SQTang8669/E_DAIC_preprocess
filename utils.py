@@ -2,9 +2,11 @@ import os
 import csv
 import json
 import math
+import fnmatch
 import shutil
 
 from moviepy.editor import AudioFileClip
+from pydub import AudioSegment
 
 
 def check_path(path, sample_id = None):
@@ -46,7 +48,7 @@ def convert_trans(file, new_path):
 
         for contd in reader:
             st, et = contd[0], contd[1]
-            tmp = {'st': st, 'et': et}
+            tmp = {'st': float(st), 'et': float(et)}
             trans_dict.append(tmp)
 
     with open(new_path, 'w') as f:
@@ -88,6 +90,7 @@ def clean_after_filter(new_path, audio_filter_path):
             os.remove(f'{new_path}/audio/{item}')
             
     cleanup_empty_folders(f'{new_path}/audio')
+
 
 def process_et(st, et, trans, idx, audio_len):
     # if end time smaller than start time, then change the end time to the start time of last segment
@@ -140,44 +143,105 @@ def process_whisper_result(result, st_last, thres):
             return None
 
 
-def process_clips(st, et, thres, model, audio_file, audio_seg_path, filters, sample_id, idx):
+def save_clip(st, et, audio_file, audio_seg_path, sample_id, idx):
     clip_path = os.path.join(audio_seg_path, f'{sample_id}_{idx}.wav')
     clip = audio_file.subclip(st, et)
     clip.write_audiofile(clip_path, logger=None)
 
-    result = model.transcribe(clip_path)
+    return clip_path
 
+
+def get_trans(model, clip_path, st, thres, sample_id, idx):
+
+    result = model.transcribe(clip_path)
     result_filter = process_whisper_result(result, st, thres)
 
     if result_filter:
-        filters.append(result_filter)
+        return result_filter
     else:
         shutil.move(clip_path, os.path.join('data/audio/audio_no', f'{sample_id}_{idx}.wav'))
+        return None
 
 
-def merge_overlapping_segments(trans):
-    """Merge overlapping segments."""
-    if not trans:
-        return []
+def process_json(data, audio_duration):
+    if not data:
+        raise FileNotFoundError('Transcripts void.')
+    
+    filtered_data = []
+    for i, seg in enumerate(data):
+        seg_new = {}
 
-    # Sort segments based on the start time
-    sorted_trans = sorted(trans, key=lambda x: float(x['st']))
-    merged_trans = [sorted_trans[0]]
+        if i != len(data) - 1:
 
-    for current in sorted_trans[1:]:
-        last = merged_trans[-1]
-        # If current segment starts before last segment ends, they overlap
-        if float(current['st']) < float(last['et']):
-            # Merge the segments by extending the end time of the last segment
-            last['et'] = max(float(last['et']), float(current['et']))
+            if 30 > data[i+1]['st'] - seg['et'] > 10:
+                seg_new_new = {'st': seg['et'], 'et': data[i+1]['st']}
+                # final check
+                if seg_new_new['st'] < seg_new_new['et'] and seg_new_new['et'] < audio_duration: 
+                    filtered_data.append(seg_new_new)
+
+            seg_new['et'] = max(data[i+1]['st'], seg['et'])
         else:
-            # No overlap, add the current segment to the list
-            merged_trans.append(current)
+            seg_new['et'] = int(min(audio_duration, seg['et']))
 
-    return merged_trans
+        if i != 0:
+            if seg['et'] - seg['st'] > 60:
+                seg['st'] = data[i-1]['et']
 
-def process_audio(audio_filter_path, item):
-    audio_path = os.path.join(audio_filter_path, item)
+            seg_new['st'] = max(data[i-1]['et'], seg['st'])
+        else:
+            seg_new['st'] = seg['st']
+
+        # final check
+        if seg_new['st'] < seg_new['et'] and seg_new['et'] < audio_duration:
+            filtered_data.append(seg_new)
+
+    return filtered_data
+
+
+def process_audio(new_path, item):
+    audio_path = os.path.join(new_path, 'audio', item)
     audio_file = AudioFileClip(audio_path)
     audio_len = audio_file.duration
     return audio_file, audio_len
+
+
+def load_and_split_audio(audio_path, segment_s=10):
+    """加载音频并分割成指定长度的片段。
+    
+    参数:
+    audio_path: 音频文件的路径。
+    segment_length_ms: 每个片段的长度，单位为毫秒。
+    
+    返回:
+    分割后的音频片段列表。
+    """
+    audio = AudioFileClip(audio_path)
+    segments = [audio.subclip(i, i+segment_s) for i in range(0, int(audio.duration), segment_s)]
+
+    return segments, audio.fps 
+
+
+def save_audio(audio_path, segments):
+    """将多个音频片段拼接后保存。
+    
+    参数:
+    audio_path: 保存音频的路径。
+    segments: 音频片段列表。
+    """
+    combined = segments[0]
+    for segment in segments[1:]:
+        combined += segment
+    combined.export(audio_path, format="wav")
+
+
+def find_audio_files(directory, audio_id):
+    # 构建搜索模式
+    pattern = f"{audio_id}*.wav"
+    
+    # 查找匹配的文件
+    matching_files = []
+    for root, dirs, files in os.walk(directory):
+        for filename in fnmatch.filter(files, pattern):
+            matching_files.append(os.path.join(root, filename))
+    
+    return matching_files
