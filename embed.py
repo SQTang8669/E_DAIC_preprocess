@@ -19,10 +19,10 @@ audio_seg_path = 'data/audio/audio_seg'
 audio_path = 'data/new_data/audio_filter'
 embed_path = 'data/embeds_02'
 
-model_path = 'model/audio_mamba/base_scratch-voxceleb.pth'
-config_path ='optional/configs/base_scratch-voxceleb.json'
+model_path = 'model/audio_mamba/base_audioset-voxceleb.pth'
+config_path ='optional/configs/base_audioset-voxceleb.json'
 
-tmp_name = 'tmp_01.wav'
+tmp_name = 'tmp.wav'
 
 class Embed():
 

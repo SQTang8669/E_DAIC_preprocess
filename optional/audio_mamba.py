@@ -41,9 +41,20 @@ def get_audio_feats(audio_path, config_path):
     elif p < 0:
         fbank = fbank[0:data_args.target_length, :]
 
-    fbank = (fbank - data_args.mean) / (data_args.std * 2)
+    freqm = torchaudio.transforms.FrequencyMasking(data_args.freqm)
+    timem = torchaudio.transforms.TimeMasking(data_args.timem)
 
+    fbank = torch.transpose(fbank, 0, 1)
+    # this is just to satisfy new torchaudio version, which only accept [1, freq, time]
     fbank = fbank.unsqueeze(0)
+    if data_args.freqm != 0:
+        fbank = freqm(fbank)
+    if data_args.timem != 0:
+        fbank = timem(fbank)
+    # squeeze it back, it is just a trick to satisfy new torchaudio version
+    fbank = fbank.squeeze(0)
+    fbank = torch.transpose(fbank, 0, 1)
+    fbank = (fbank - data_args.mean) / (data_args.std * 2)
 
     return fbank
 
