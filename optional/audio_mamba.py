@@ -56,7 +56,7 @@ def get_audio_feats(audio_path, config_path):
     fbank = torch.transpose(fbank, 0, 1)
     fbank = (fbank - data_args.mean) / (data_args.std * 2)
 
-    return fbank
+    return fbank.unsqueeze(0)
 
 def get_model(model_path, config_path):
 
