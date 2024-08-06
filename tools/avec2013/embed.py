@@ -10,19 +10,19 @@ from optional.audio_mamba import get_model, get_audio_feats
 
 from rich.progress import Progress
 
-from utils import *
+from tools.utils import *
 
 path = 'data/original'
 new_path = 'data/new_data'
 # audio_filter_path = 'data/audio/audio_filter'
 audio_seg_path = 'data/audio/audio_seg'
 audio_path = 'data/new_data/audio_filter'
-embed_path = 'data/embeds_02'
+embed_path = 'data/embeds_01'
 
-model_path = 'model/audio_mamba/base_audioset-voxceleb.pth'
-config_path ='optional/configs/base_audioset-voxceleb.json'
+model_path = 'model/audio_mamba/base_scratch-voxceleb.pth'
+config_path ='optional/configs/base_scratch-voxceleb.json'
 
-tmp_name = 'tmp_02.wav'
+tmp_name = 'tmp.wav'
 
 class Embed():
 

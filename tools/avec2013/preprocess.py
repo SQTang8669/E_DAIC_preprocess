@@ -2,13 +2,13 @@ import os
 import shutil
 
 import whisper
-from utils import *
+from tools.utils import *
 from rich.progress import Progress
 
 from df.enhance import enhance, init_df, load_audio, save_audio
 
 
-path = 'data/original'
+path = 'data/avec2013_audio'
 new_path = 'data/new_data'
 # audio_filter_path = 'data/audio/audio_filter'
 audio_seg_path = 'data/audio/audio_seg'
