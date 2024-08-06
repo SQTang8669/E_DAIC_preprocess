@@ -6,7 +6,6 @@ import fnmatch
 import shutil
 
 from moviepy.editor import AudioFileClip
-from pydub import AudioSegment
 
 
 def check_path(path, sample_id = None):
@@ -245,3 +244,13 @@ def find_audio_files(directory, audio_id):
             matching_files.append(os.path.join(root, filename))
     
     return matching_files
+
+
+def count_files_in_subdirs(directory, extension):
+    total_files = 0
+    for root, dirs, files in os.walk(directory):
+        # Skip the root directory itself
+        if root == directory:
+            continue
+        total_files += len([file for file in files if file.endswith(extension)])
+    return total_files
