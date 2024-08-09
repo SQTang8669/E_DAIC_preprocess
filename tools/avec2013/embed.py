@@ -30,7 +30,6 @@ class Embed():
     def embedding():
         os.makedirs(embed_path, exist_ok=True)
 
-        os.makedirs(embed_path, exist_ok=True)
         print('Loading text embedding model......')
         text_embed_model = SentenceModel("model/text2vec")
         print('Loaded text embedded model.')
@@ -54,6 +53,7 @@ class Embed():
 
                     if sample.endswith('.wav'):
                         audio_file = AudioFileClip(os.path.join(data_split_path, f'{audio_id}.wav'))
+                        audio_len = audio_file.duration
                         json_path = os.path.join(data_split_path, f'{audio_id}.json')
 
                         with open(json_path, 'rb') as f:
@@ -61,27 +61,29 @@ class Embed():
 
                         embeds = []
                         for seg in trans:
-                            st, et, text = seg['start'], seg['end'], seg['text']
-                            text_embed = text_embed_model.encode(text)
+                            if seg['start'] < audio_len:
+                                st, et, text = seg['start'], min(seg['end'], audio_len), seg['text']
+                                text_embed = text_embed_model.encode(text)
 
-                            audio_seg = audio_file.subclip(st, et)
-                            audio_seg.write_audiofile(tmp_name, logger=None)
-                            audio_input = get_audio_feats(tmp_name, config_path)
+                                audio_seg = audio_file.subclip(st, et)
+                                audio_seg.write_audiofile(tmp_name, logger=None)
+                                audio_input = get_audio_feats(tmp_name, config_path)
 
-                            with torch.no_grad():
-                                audio_embed, mean_embeds, max_embeds = AuM.forward(audio_input.cuda(), return_features=True)
+                                with torch.no_grad():
+                                    audio_embed, mean_embeds, max_embeds = AuM.forward(audio_input.cuda(), return_features=True)
 
-                            embed = {
-                                'txt': text_embed,
-                                'ado': np.array(audio_embed.detach().cpu()),
-                                'ado_mean': np.array(mean_embeds.detach().cpu()),
-                                'ado_max': np.array(max_embeds.detach().cpu())
-                            }
-                            embeds.append(embed)
-                        
-                        with open(os.path.join(embed_path, f'{audio_id}.pkl'), 'wb') as f:
-                            pickle.dump(embeds, f)
-                        progress.update(task, advance=1)
+                                embed = {
+                                    'txt': text_embed,
+                                    'ado': np.array(audio_embed.detach().cpu()),
+                                    'ado_mean': np.array(mean_embeds.detach().cpu()),
+                                    'ado_max': np.array(max_embeds.detach().cpu())
+                                }
+                                embeds.append(embed)
+                            
+                            with open(os.path.join(embed_path, f'{audio_id}.pkl'), 'wb') as f:
+                                pickle.dump(embeds, f)
+
+                            progress.update(task, advance=1)
 
         print('-----------------------------  Embedding finished  -----------------------------')
 if __name__ == '__main__':
