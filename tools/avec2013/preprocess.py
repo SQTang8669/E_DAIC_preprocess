@@ -2,6 +2,7 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+import pickle
 import whisper
 from tools.utils_ import *
 from rich.progress import Progress, TextColumn, BarColumn, TimeRemainingColumn, TaskProgressColumn
@@ -11,8 +12,8 @@ from moviepy.editor import AudioFileClip
 from df.enhance import enhance, init_df, load_audio, save_audio
 
 
-audio_path = 'data/avec2013_audio'
-trans_path = 'data/transcription'
+audio_path = 'data/2013_Audio'
+trans_path = 'data/trans'
 
 id_len = 5
 padding = 0.1
@@ -27,14 +28,13 @@ class Steps():
         '''
         1. convert xxx_x_cut_audio.mp4 to xxx_x.wav.
         '''
-        console = Console()
         with Progress(
                     TextColumn("[bold yellow]{task.description}"),
                     BarColumn(),
                     TextColumn("{task.completed}/{task.total}"),
                     TaskProgressColumn(),
                     TimeRemainingColumn(),
-                    console=console,
+                    console=Console(),
                 ) as progress:
             task = progress.add_task("Processing audio files...", total=count_files_in_subdirs(audio_path, '.mp4'))
             
@@ -62,36 +62,58 @@ class Steps():
         2. transcribe audio.
         '''
         # loading transcribe model
-        print('Loading whisper model...')
-        model = whisper.load_model("medium.en")
-        print('Loaded whisper model.')
+        print('-----------------------------Loading whisper model...-----------------------------')
+        model = whisper.load_model("medium")
+        print('-------------------------------Loaded whisper model.------------------------------')
         # loading audio filter model
-        print('Loading audio filter model...')
+        print('-----------------------------Loading audio filter model...------------------------')
         deepfilter_model, df_state, _ = init_df(log_file=None)
-        print('Loaded audio filter model.')
+        print('-------------------------------Loaded audio filter model.-------------------------')
 
-        with Progress() as progress:
-            audio_files = os.listdir(path=audio_path)
-            task = progress.add_task("[red]Processing audio files...", total=len(audio_files))
+        with Progress(
+                    TextColumn("[bold yellow]{task.description}"),
+                    BarColumn(),
+                    TextColumn("{task.completed}/{task.total}"),
+                    TaskProgressColumn(),
+                    TimeRemainingColumn(),
+                    console=Console(),
+                ) as progress:
+            
+            task = progress.add_task("Processing audio files...", total=count_files_in_subdirs(audio_path, '.wav'))
 
-            for item in audio_files:
-                sample_id = item[:id_len]
+            for data_split in os.listdir(audio_path):  # data_split as development/testing/training         
+                data_split_path = os.path.join(audio_path, data_split)
+                for sample in os.listdir(data_split_path):  # sample as xxx_x_cut_audio.mp4
+                    
+                    if sample.endswith('.wav'):
+                        sample_id = sample[:id_len]
+                        
+                        # audio_, _ = load_audio(os.path.join(data_split_path, sample))
+                        # filter_audio = enhance(deepfilter_model, df_state, audio_)
+                        # save_audio('tmp.wav', filter_audio, df_state.sr())
 
-                audio_file, audio_len = process_audio(audio_path, item)
+                        # model_result = model.transcribe('tmp.wav')
+                        model_result = model.transcribe(os.path.join(data_split_path, sample))
 
-                filters = []
-                task2 = progress.add_task(f"[blue]Processing segments for {sample_id}...", total=len(trans))
+                        segments = []
+                        for segment in model_result['segments']:
+                            segment = {
+                                'start': round(segment['start'], 2),
+                                'end': round(segment['end'], 2),
+                                'text': f'"{segment["text"]}"'
+                            }
+                            segments.append(segment)
+                        
+                        with open(f'{data_split_path}/{sample_id}.json', 'w') as f:
+                            json.dump(segments, f, indent=4, ensure_ascii=False)
 
-              
-                progress.update(task, advance=1)
+                        progress.update(task, advance=1)
 
-                with open(f'{new_path}/trans_new/{sample_id}.json', 'w') as f:
-                    json.dump(filters, f, indent=4)
                 
         print('-----------------------------  Step 2 finished  -----------------------------')
 
 
 if __name__ == '__main__':
     
-    Steps.step_1()
-    # Steps.step_2()
+    # Steps.step_1()
+    Steps.step_2()
