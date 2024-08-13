@@ -4,87 +4,91 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 import json
 import pickle
-
 import torch
-import numpy as np
+import torchaudio
 from text2vec import SentenceModel
 from moviepy.editor import AudioFileClip
 from optional.audio_mamba import get_model, get_audio_feats
-
 from rich.progress import Progress, TextColumn, BarColumn, TimeRemainingColumn, TaskProgressColumn
 
-from tools.utils_ import *
-
+# 定义路径和模型参数
 path = 'data/2013_Audio'
 embed_path = 'data/embeds'
-
 model_path = 'model/audio_mamba/base_scratch-voxceleb.pth'
-config_path ='optional/configs/base_scratch-voxceleb.json'
-
+config_path = 'optional/configs/base_scratch-voxceleb.json'
 tmp_name = 'tmp.wav'
 
-id_len = 5
+def initialize_models():
+    print('Loading models...')
+    text_embed_model = SentenceModel("model/text2vec")
+    audio_model = get_model(model_path, config_path)
+    if torch.cuda.is_available():
+        audio_model.cuda()
+    print('Models loaded.')
+    return text_embed_model, audio_model
 
-class Embed():
+def process_audio_files(text_model, audio_model):
+    os.makedirs(embed_path, exist_ok=True)
 
-    def embedding():
-        os.makedirs(embed_path, exist_ok=True)
+    with Progress(
+        TextColumn("[bold yellow]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("[blue]Processing...", total=sum([len(files) for r, d, files in os.walk(path)])//2)
 
-        print('Loading text embedding model......')
-        text_embed_model = SentenceModel("model/text2vec")
-        print('Loaded text embedded model.')
+        for data_split in os.listdir(path):
+            data_split_path = os.path.join(path, data_split)
+            for sample in os.listdir(data_split_path):
+                if sample.endswith('.wav'):
+                    audio_id = sample[:-4]  # Assume the ID is the filename without '.wav'
+                    process_single_file(data_split_path, audio_id, text_model, audio_model, progress, task)
 
-        print('Loading audio embedding model......')
-        AuM = get_model(model_path, config_path)
-        print('Loaded audio embedded model.')
+def clip_audio(waveform, start_sec, duration_sec, sample_rate):
+    start_sample = int(start_sec * sample_rate)
+    end_sample = start_sample + int(duration_sec * sample_rate)
+    return waveform[:, start_sample:end_sample]
 
-        with Progress(
-                    TextColumn("[bold yellow]{task.description}"),
-                    BarColumn(),
-                    TextColumn("{task.completed}/{task.total}"),
-                    TaskProgressColumn(),
-                    TimeRemainingColumn(),
-                ) as progress:
-            task = progress.add_task(f"[blue]Processing...", total=count_files_in_subdirs(path, '.wav'))
-            for data_split in os.listdir(path):
-                data_split_path = os.path.join(path, data_split)
-                for sample in os.listdir(data_split_path):
-                    audio_id = sample[:id_len]
+def process_single_file(data_split_path, audio_id, text_model, audio_model, progress, task):
+    try:
+        audio_file, sr = torchaudio.load(os.path.join(data_split_path, f'{audio_id}.wav'))
+        audio_len = audio_file.shape[1] / sr
+        json_path = os.path.join(data_split_path, f'{audio_id}.json')
 
-                    if sample.endswith('.wav'):
-                        audio_file = AudioFileClip(os.path.join(data_split_path, f'{audio_id}.wav'))
-                        audio_len = audio_file.duration
-                        json_path = os.path.join(data_split_path, f'{audio_id}.json')
+        with open(json_path, 'r') as f:
+            trans = json.load(f)
 
-                        with open(json_path, 'rb') as f:
-                            trans = json.load(f)
+        embeds = []
+        for seg in trans:
+            if seg['start'] < audio_len:
+                st, et, text = seg['start'], min(seg['end'], audio_len), seg['text']
+                text_embed = text_model.encode(text)
 
-                        embeds = []
-                        for seg in trans:
-                            if seg['start'] < audio_len:
-                                st, et, text = seg['start'], min(seg['end'], audio_len), seg['text']
-                                text_embed = text_embed_model.encode(text)
+                audio_seg = clip_audio(audio_file, st, et - st, sr)
+                audio_input = get_audio_feats([audio_seg, sr], config_path)
 
-                                audio_seg = audio_file.subclip(st, et)
-                                audio_seg.write_audiofile(tmp_name, logger=None)
-                                audio_input = get_audio_feats(tmp_name, config_path)
+                with torch.no_grad():
+                    if torch.cuda.is_available():
+                        audio_input = audio_input.cuda()
+                    audio_embed, mean_embeds, max_embeds = audio_model.forward(audio_input, return_features=True)
 
-                                with torch.no_grad():
-                                    audio_embed, mean_embeds, max_embeds = AuM.forward(audio_input.cuda(), return_features=True)
+                embed = {
+                    'txt': text_embed,
+                    'ado': audio_embed.detach().cpu().numpy(),
+                    'ado_mean': mean_embeds.detach().cpu().numpy(),
+                    'ado_max': max_embeds.detach().cpu().numpy()
+                }
+                embeds.append(embed)
 
-                                embed = {
-                                    'txt': text_embed,
-                                    'ado': np.array(audio_embed.detach().cpu()),
-                                    'ado_mean': np.array(mean_embeds.detach().cpu()),
-                                    'ado_max': np.array(max_embeds.detach().cpu())
-                                }
-                                embeds.append(embed)
-                            
-                            with open(os.path.join(embed_path, f'{audio_id}.pkl'), 'wb') as f:
-                                pickle.dump(embeds, f)
+        with open(os.path.join(embed_path, f'{audio_id}.pkl'), 'wb') as f:
+            pickle.dump(embeds, f)
 
-                            progress.update(task, advance=1)
+        progress.update(task, advance=1)
+    except Exception as e:
+        print(f"Error processing {audio_id}: {e}")
 
-        print('-----------------------------  Embedding finished  -----------------------------')
 if __name__ == '__main__':
-    Embed.embedding()
+    text_embed_model, audio_embed_model = initialize_models()
+    process_audio_files(text_embed_model, audio_embed_model)

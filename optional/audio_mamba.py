@@ -9,13 +9,14 @@ class Namespace:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
 
-def get_audio_feats(audio_path, config_path):
+def get_audio_feats(audio_content, config_path):
 
     with open(config_path, 'r') as f:
         config = json.load(f) 
     data_args = Namespace(**config)
 
-    waveform, sr = torchaudio.load(audio_path)
+    # waveform, sr = torchaudio.load(audio_path)
+    waveform, sr = audio_content
     waveform = waveform - waveform.mean()
 
     # Extract the features
