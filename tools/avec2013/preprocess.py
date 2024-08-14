@@ -64,7 +64,8 @@ class Steps():
         '''
         # loading transcribe model
         print('-----------------------------Loading whisper model...-----------------------------')
-        model = whisper.load_model("medium")
+        # model_small = whisper.load_model("small")
+        model_large = whisper.load_model("large")
         print('-------------------------------Loaded whisper model.------------------------------')
         # loading audio filter model
         print('-----------------------------Loading audio filter model...------------------------')
@@ -88,27 +89,37 @@ class Steps():
                 
                 if sample.endswith('.wav'):
                     sample_id = sample[:id_len]
-                    
-                    # audio_, _ = load_audio(os.path.join(data_split_path, sample))
-                    # filter_audio = enhance(deepfilter_model, df_state, audio_)
-                    # save_audio('tmp.wav', filter_audio, df_state.sr())
+                    file_name = os.path.join(audio_path, sample)
 
-                    # model_result = model.transcribe('tmp.wav')
-                    model_result = model.transcribe(os.path.join(audio_path, sample))
+                    json_name = os.path.join('data/trans', f'{sample_id}.json')
+                    with open(json_name, 'r') as f:
+                        rough_results = json.load(f)
+
+                    audio = AudioFileClip(file_name)
 
                     segments = []
-                    for segment in model_result['segments']:
-                        segment = {
-                            'start': round(segment['start'], 2),
-                            'end': round(segment['end'], 2),
-                            'text': f'"{segment["text"]}"'
-                        }
-                        segments.append(segment)
-                    
-                    with open(f'data/trans/{sample_id}.json', 'w') as f:
-                        json.dump(segments, f, indent=4, ensure_ascii=False)
+                    for segment in rough_results:
+                        st = round(segment['start'], 2)
+                        et = round(segment['end'], 2)
 
-                    progress.update(task, advance=1)
+                        audio_clip = audio.subclip(st, et)
+                        audio_clip.write_audiofile('tmp.wav', logger=None)
+
+                        refined_result = model_large.transcribe('tmp.wav')
+
+                        for seg in refined_result['segments']:
+                            if seg['no_speech_prob'] < 0.8:
+                                seg = {
+                                    'start': round(seg['start'], 2),
+                                    'end': round(seg['end'], 2),
+                                    'text': f'"{seg["text"]}"'
+                                }
+                                segments.append(seg)
+                        
+                        with open(f'data/trans/{sample_id}.json', 'w') as f:
+                            json.dump(segments, f, indent=4, ensure_ascii=False)
+
+                        progress.update(task, advance=1)
 
                 
         print('-----------------------------  Step 2 finished  -----------------------------')
