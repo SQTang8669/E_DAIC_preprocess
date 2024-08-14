@@ -12,7 +12,7 @@ from optional.audio_mamba import get_model, get_audio_feats
 from rich.progress import Progress, TextColumn, BarColumn, TimeRemainingColumn, TaskProgressColumn
 
 # 定义路径和模型参数
-path = 'data/2013_Audio'
+path = 'data/2013_audio'
 embed_path = 'data/embeds'
 model_path = 'model/audio_mamba/base_scratch-voxceleb.pth'
 config_path = 'optional/configs/base_scratch-voxceleb.json'
@@ -39,12 +39,12 @@ def process_audio_files(text_model, audio_model):
     ) as progress:
         task = progress.add_task("[blue]Processing...", total=sum([len(files) for r, d, files in os.walk(path)])//2)
 
-        for data_split in os.listdir(path):
-            data_split_path = os.path.join(path, data_split)
-            for sample in os.listdir(data_split_path):
-                if sample.endswith('.wav'):
-                    audio_id = sample[:-4]  # Assume the ID is the filename without '.wav'
-                    process_single_file(data_split_path, audio_id, text_model, audio_model, progress, task)
+        # for data_split in os.listdir(path):
+            # data_split_path = os.path.join(path, data_split)
+        for sample in os.listdir(path):
+            if sample.endswith('.wav'):
+                audio_id = sample[:-4]  # Assume the ID is the filename without '.wav'
+                process_single_file(path, audio_id, text_model, audio_model, progress, task)
 
 def clip_audio(waveform, start_sec, duration_sec, sample_rate):
     start_sample = int(start_sec * sample_rate)
@@ -55,7 +55,7 @@ def process_single_file(data_split_path, audio_id, text_model, audio_model, prog
     try:
         audio_file, sr = torchaudio.load(os.path.join(data_split_path, f'{audio_id}.wav'))
         audio_len = audio_file.shape[1] / sr
-        json_path = os.path.join(data_split_path, f'{audio_id}.json')
+        json_path = os.path.join('data/trans',f'{audio_id}.json')
 
         with open(json_path, 'r') as f:
             trans = json.load(f)
